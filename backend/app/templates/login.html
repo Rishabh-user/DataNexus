@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataNexus - Sign In</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="login-page">
+        <div class="login-container">
+            <div class="login-logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                </div>
+                <h1>DataNexus</h1>
+                <p>AI Intelligence Platform</p>
+            </div>
+            <div class="login-card">
+                <div class="login-tabs">
+                    <button class="active" data-mode="login">Sign In</button>
+                    <button data-mode="register">Create Account</button>
+                </div>
+                <div class="alert alert-error" id="auth-alert"></div>
+                <form id="auth-form">
+                    <div class="form-group" id="name-group" style="display:none">
+                        <label>Full Name</label>
+                        <input type="text" id="auth-name" placeholder="John Doe">
+                    </div>
+                    <div class="form-group">
+                        <label>Email Address</label>
+                        <input type="email" id="auth-email" placeholder="you@example.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" id="auth-password" placeholder="Enter your password" required minlength="6">
+                    </div>
+                    <button type="submit" class="btn btn-primary-full btn-lg" id="auth-submit">Sign In</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <script src="/static/js/app.js"></script>
+    <script>initLoginPage();</script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+# ── Python ──────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# ── Virtual environments ─────────────────────────
+.venv/
+venv/
+env/
+
+# ── Environment / Secrets (NEVER commit) ─────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ── Database files ───────────────────────────────
+*.db
+*.sqlite3
+*.sqlite
+
+# ── Upload & generated file folders ──────────────
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/generated_reports/*
+!backend/generated_reports/.gitkeep
+uploads/*
+!uploads/.gitkeep
+generated_reports/*
+!generated_reports/.gitkeep
+
+# ── Test artifacts ───────────────────────────────
+test_*.pptx
+test_*.xlsx
+*.pptx
+*.xlsx
+DataNexus_Preview_*.pptx
+
+# ── Debug / scratch scripts ──────────────────────
+check_db*.py
+test_ppt_gen.py
+test_rbac.py
+
+# ── IDE / OS ─────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Cache / coverage ─────────────────────────────
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.claude/
