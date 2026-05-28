@@ -1,4 +1,4 @@
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.vector_store import similarity_search
@@ -44,26 +44,32 @@ async def structured_search(
     query: str,
     data_type: str | None = None,
 ) -> list[SearchResult]:
-    # Use raw SQL for cross-DB compatibility
-    params = {"user_id": user_id, "search_term": f"%{query}%"}
+    # Resolve visible user IDs (own + team members) — avoids raw SQL IN limitation
+    from app.ai.vector_store import _get_visible_user_ids
+    visible_ids = await _get_visible_user_ids(db, user_id)
 
-    type_clause = ""
+    filters = [
+        File.user_id.in_(visible_ids),
+        ExtractedData.raw_text.ilike(f"%{query}%"),
+    ]
     if data_type:
-        type_clause = "AND ed.data_type = :data_type"
-        params["data_type"] = data_type
+        filters.append(ExtractedData.data_type == data_type)
 
-    sql = text(f"""
-        SELECT ed.id, ed.file_id, ed.data_type, ed.raw_text,
-               ed.structured_data, ed.source_page, f.filename
-        FROM extracted_data ed
-        JOIN files f ON ed.file_id = f.id
-        WHERE f.user_id = :user_id
-            AND (ed.raw_text LIKE :search_term)
-            {type_clause}
-        LIMIT 20
-    """)
-
-    result = await db.execute(sql, params)
+    stmt = (
+        select(
+            ExtractedData.id,
+            ExtractedData.file_id,
+            ExtractedData.data_type,
+            ExtractedData.raw_text,
+            ExtractedData.structured_data,
+            ExtractedData.source_page,
+            File.filename,
+        )
+        .join(File, ExtractedData.file_id == File.id)
+        .where(*filters)
+        .limit(20)
+    )
+    result = await db.execute(stmt)
     rows = result.fetchall()
 
     return [

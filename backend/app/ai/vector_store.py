@@ -11,6 +11,25 @@ from app.models.file import File
 
 logger = get_logger(__name__)
 
+
+async def _get_visible_user_ids(db: AsyncSession, user_id: int) -> list[int]:
+    """Return list of user IDs whose files are visible to user_id (own + all team-mates)."""
+    from app.models.team import TeamMember
+
+    result = await db.execute(
+        select(TeamMember.user_id)
+        .where(
+            TeamMember.team_id.in_(
+                select(TeamMember.team_id).where(TeamMember.user_id == user_id)
+            )
+        )
+        .distinct()
+    )
+    ids = {row[0] for row in result.all()}
+    ids.add(user_id)   # always include self
+    return list(ids)
+
+
 # Common English stopwords to exclude from search
 _STOPWORDS = {
     "a", "an", "the", "is", "it", "in", "on", "at", "to", "of", "for",
@@ -149,9 +168,12 @@ async def similarity_search(
     if not terms:
         return []
 
+    # Resolve all user IDs whose files are visible (own + team members)
+    visible_ids = await _get_visible_user_ids(db, user_id)
+
     # ----- gather candidates per term (avoids SQL LIMIT drowning) -----
     base_filters = [
-        File.user_id == user_id,
+        File.user_id.in_(visible_ids),
         File.processing_status == "completed",
     ]
     if file_type_filter:

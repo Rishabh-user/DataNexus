@@ -61,3 +61,9 @@ class User(Base):
     chat_sessions: Mapped[list["ChatSession"]] = relationship(back_populates="user", lazy="noload")
     onedrive_token: Mapped["OneDriveToken | None"] = relationship(back_populates="user", uselist=False, lazy="noload")
     reports: Mapped[list["Report"]] = relationship(back_populates="user", lazy="noload")
+    owned_teams: Mapped[list["Team"]] = relationship(
+        foreign_keys="[Team.created_by]", back_populates="creator", lazy="noload"
+    )
+    team_memberships: Mapped[list["TeamMember"]] = relationship(
+        back_populates="user", lazy="noload"
+    )

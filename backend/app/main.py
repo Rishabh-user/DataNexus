@@ -22,6 +22,8 @@ from app.models import (  # noqa: F401 - imported so Base.metadata knows all tab
     OneDriveToken,
     Report,
     TaskLog,
+    Team,
+    TeamMember,
     User,
 )
 
@@ -126,6 +128,10 @@ def create_app() -> FastAPI:
 
     @app.get("/admin", response_class=HTMLResponse)
     async def admin_page():
+        return _get_index()
+
+    @app.get("/teams", response_class=HTMLResponse)
+    async def teams_page():
         return _get_index()
 
     return app

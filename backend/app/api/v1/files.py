@@ -12,7 +12,13 @@ from app.models.file import File
 from app.models.user import User, UserRole
 from app.schemas.common import PaginatedResponse
 from app.schemas.file import FileResponse, FileStatusResponse, FileUploadResponse
-from app.services.file_service import delete_file, get_file_by_id, get_user_files, upload_file
+from app.services.file_service import (
+    delete_file,
+    get_file_accessible,
+    get_file_by_id,
+    get_user_files,
+    upload_file,
+)
 from app.utils.validators import validate_upload_file
 
 logger = get_logger(__name__)
@@ -86,12 +92,16 @@ async def upload(
 async def list_files(
     pagination: PaginationParams = Depends(),
     search: str | None = None,
+    scope: str = "all",   # "all" = own + team files | "mine" = own only
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    files, total = await get_user_files(db, current_user.id, pagination.skip, pagination.limit, search=search)
+    files, total = await get_user_files(
+        db, current_user.id, pagination.skip, pagination.limit,
+        search=search, scope=scope,
+    )
     return PaginatedResponse(
-        items=[FileResponse.model_validate(f) for f in files],
+        items=[FileResponse.from_db(f, current_user.id) for f in files],
         total=total,
         skip=pagination.skip,
         limit=pagination.limit,
@@ -105,7 +115,8 @@ async def get_file(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await get_file_by_id(db, current_user.id, file_id)
+    file = await get_file_accessible(db, current_user.id, file_id)
+    return FileResponse.from_db(file, current_user.id)
 
 
 @router.get("/{file_id}/status", response_model=FileStatusResponse)
@@ -114,7 +125,7 @@ async def get_file_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    file = await get_file_by_id(db, current_user.id, file_id)
+    file = await get_file_accessible(db, current_user.id, file_id)
     return FileStatusResponse.model_validate(file)
 
 
@@ -172,8 +183,8 @@ async def get_extracted_data(
     from app.models.extracted_data import ExtractedData
     from app.models.document_chunk import DocumentChunk
 
-    # Verify file belongs to user
-    file_record = await get_file_by_id(db, current_user.id, file_id)
+    # Verify file is accessible (own or team member)
+    file_record = await get_file_accessible(db, current_user.id, file_id)
 
     # Get extracted data
     result = await db.execute(

@@ -5,6 +5,7 @@ from app.models.file import File
 from app.models.onedrive_token import OneDriveToken
 from app.models.report import Report
 from app.models.task_log import TaskLog
+from app.models.team import Team, TeamMember
 from app.models.user import User
 
 __all__ = [
@@ -17,4 +18,6 @@ __all__ = [
     "OneDriveToken",
     "Report",
     "TaskLog",
+    "Team",
+    "TeamMember",
 ]

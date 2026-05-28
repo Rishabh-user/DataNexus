@@ -585,13 +585,16 @@ async def generate_excel_from_chat(
     # Optionally fetch raw extracted data from source files
     extra_data = []
     if request.source_file_ids:
+        from app.ai.vector_store import _get_visible_user_ids
         from app.models.extracted_data import ExtractedData
         from app.models.file import File
 
+        visible_ids = await _get_visible_user_ids(db, current_user.id)
+
         for fid in request.source_file_ids[:10]:  # Max 10 files
-            # Verify ownership
+            # Verify file is accessible (own or team member's file)
             result = await db.execute(
-                select(File).where(File.id == fid, File.user_id == current_user.id)
+                select(File).where(File.id == fid, File.user_id.in_(visible_ids))
             )
             f = result.scalar_one_or_none()
             if not f:

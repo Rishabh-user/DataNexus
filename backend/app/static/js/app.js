@@ -91,6 +91,7 @@ function navigate(page) {
         ppt: ['PPT Generator', 'AI-powered presentation generation from your data'],
         settings: ['Settings', 'Configure your platform'],
         admin: ['User Management', 'Manage users, roles, and access permissions'],
+        teams: ['My Teams', 'Collaborate and share documents with your team'],
     };
     const t = titles[page] || [page, ''];
     document.getElementById('page-title').textContent = t[0];
@@ -340,6 +341,7 @@ registerPage('dashboard', async () => {
 // =============================================
 let currentBrowseFolderId = null;
 let browseHistory = [];
+let _filesScope = 'all';  // 'all' = own + team | 'mine' = own only
 
 registerPage('files', async () => {
     const body = document.getElementById('page-body');
@@ -360,7 +362,7 @@ registerPage('files', async () => {
     try {
         let odStatus = { connected: false };
         try { odStatus = await api('/onedrive/status'); } catch {}
-        const filesRes = await api('/files?skip=0&limit=50');
+        const filesRes = await api(`/files?skip=0&limit=50&scope=${_filesScope}`);
         const files = filesRes.items || [];
 
         body.innerHTML = `
@@ -395,10 +397,16 @@ registerPage('files', async () => {
             </div>
 
             <div class="card">
-                <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
-                    <span>Synced & Uploaded Files</span>
+                <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
                     <div style="display:flex;align-items:center;gap:0.5rem;">
-                        <input type="text" id="files-search" placeholder="Search files..." onkeyup="handleFilesSearch(this.value)" style="padding:0.35rem 0.75rem;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;background:var(--bg-input);color:var(--text-primary);width:220px;">
+                        <span>Files</span>
+                        <div class="files-scope-tabs">
+                            <button class="scope-tab ${_filesScope === 'all' ? 'active' : ''}" onclick="setFilesScope('all')">All Files</button>
+                            <button class="scope-tab ${_filesScope === 'mine' ? 'active' : ''}" onclick="setFilesScope('mine')">My Files</button>
+                        </div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:0.5rem;">
+                        <input type="text" id="files-search" placeholder="Search files..." onkeyup="handleFilesSearch(this.value)" style="padding:0.35rem 0.75rem;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.78rem;background:var(--bg-input);color:var(--text-primary);width:200px;">
                         <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" width="16" height="16" style="flex-shrink:0;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     </div>
                 </div>
@@ -545,21 +553,33 @@ async function doSync() {
 }
 
 function renderFilesTable(files) {
+    // Show owner column only when team files are present
+    const hasTeamFiles = files.some(f => f.is_mine === false);
+    const ownerCol = hasTeamFiles ? '<th>Owner</th>' : '';
     return `<table class="data-table">
-        <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Source</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody>${files.map(f => `<tr data-file-id="${f.id}">
+        <thead><tr><th>Name</th><th>Type</th><th>Size</th>${ownerCol}<th>Source</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>${files.map(f => {
+            const isMine = f.is_mine !== false;  // default true if field absent
+            const ownerCell = hasTeamFiles
+                ? `<td>${isMine
+                    ? '<span class="file-owner-you">You</span>'
+                    : `<span class="file-owner-team">${esc(f.owner_name || 'Team Member')}</span>`}</td>`
+                : '';
+            return `<tr data-file-id="${f.id}">
             <td><div class="file-name-cell"><div class="file-icon ${fileIconClass(f.file_type)}" style="width:28px;height:28px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg></div>${esc(f.filename)}</div></td>
             <td>${f.file_type || '-'}</td>
             <td>${fmtBytes(f.file_size)}</td>
+            ${ownerCell}
             <td><span class="badge ${f.source === 'onedrive' ? 'badge-connected' : 'badge-pending'}">${f.source || 'upload'}</span></td>
             <td>${timeAgo(f.created_at)}</td>
             <td>${statusBadge(f.processing_status)}</td>
-            <td style="display:flex;gap:0.35rem;">
+            <td style="display:flex;gap:0.35rem;flex-wrap:wrap;">
                 ${f.processing_status === 'completed' ? `<button class="btn btn-outline btn-sm" onclick="viewExtractedData(${f.id})">View Data</button>` : ''}
-                ${(f.processing_status === 'pending' || f.processing_status === 'failed') ? `<button class="btn btn-outline btn-sm" onclick="reprocessFile(${f.id})">Reprocess</button>` : ''}
-                <button class="btn btn-danger btn-sm" onclick="deleteFile(${f.id})">Delete</button>
+                ${isMine && (f.processing_status === 'pending' || f.processing_status === 'failed') ? `<button class="btn btn-outline btn-sm" onclick="reprocessFile(${f.id})">Reprocess</button>` : ''}
+                ${isMine ? `<button class="btn btn-danger btn-sm" onclick="deleteFile(${f.id})">Delete</button>` : ''}
             </td>
-        </tr>`).join('')}</tbody></table>`;
+        </tr>`;
+        }).join('')}</tbody></table>`;
 }
 
 let _filesRefreshTimer = null;
@@ -567,7 +587,7 @@ function startFilesAutoRefresh() {
     stopFilesAutoRefresh();
     _filesRefreshTimer = setInterval(async () => {
         try {
-            const res = await api('/files?skip=0&limit=50');
+            const res = await api(`/files?skip=0&limit=50&scope=${_filesScope}`);
             const files = res.items || [];
             const tbody = document.getElementById('files-table-body');
             if (tbody) {
@@ -579,14 +599,31 @@ function startFilesAutoRefresh() {
 }
 function stopFilesAutoRefresh() { if (_filesRefreshTimer) { clearInterval(_filesRefreshTimer); _filesRefreshTimer = null; } }
 
+async function setFilesScope(scope) {
+    _filesScope = scope;
+    // Update tab active state
+    document.querySelectorAll('.scope-tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase().includes(scope === 'all' ? 'all' : 'my')));
+    // Reload files
+    const q = (document.getElementById('files-search') || {}).value || '';
+    const params = new URLSearchParams({ skip: 0, limit: 50, scope });
+    if (q.trim()) params.set('search', q.trim());
+    try {
+        const res = await api('/files?' + params.toString());
+        const files = res.items || [];
+        const tbody = document.getElementById('files-table-body');
+        if (tbody) tbody.innerHTML = files.length ? renderFilesTable(files) : `<div class="empty-state"><h3>No files found</h3><p>${scope === 'mine' ? 'You have no uploaded files' : 'No files yet'}</p></div>`;
+    } catch {}
+}
+
 let _filesSearchTimer = null;
 function handleFilesSearch(query) {
     clearTimeout(_filesSearchTimer);
     _filesSearchTimer = setTimeout(async () => {
         try {
             const q = query.trim();
-            const params = q ? `?skip=0&limit=50&search=${encodeURIComponent(q)}` : '?skip=0&limit=50';
-            const res = await api('/files' + params);
+            const params = new URLSearchParams({ skip: 0, limit: 50, scope: _filesScope });
+            if (q) params.set('search', q);
+            const res = await api('/files?' + params.toString());
             const files = res.items || [];
             const tbody = document.getElementById('files-table-body');
             if (tbody) {
@@ -650,9 +687,17 @@ function showExtractedDataModal(data) {
 }
 
 async function deleteFile(fileId) {
-    if (!confirm('Delete this file?')) return;
-    try { await api('/files/' + fileId, { method: 'DELETE' }); toast('File deleted', 'success'); navigate('files'); }
-    catch (e) { toast(e.message, 'error'); }
+    showConfirmModal({
+        title: 'Delete File',
+        icon: '🗑️',
+        message: 'Are you sure you want to delete this file? This cannot be undone.',
+        confirmText: 'Delete',
+        confirmClass: 'btn-danger',
+        onConfirm: async () => {
+            try { await api('/files/' + fileId, { method: 'DELETE' }); toast('File deleted', 'success'); navigate('files'); }
+            catch (e) { toast(e.message, 'error'); }
+        },
+    });
 }
 
 async function reprocessFile(id) {
@@ -1683,6 +1728,287 @@ function avatarColor(name) {
     const colors = ['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#3b82f6','#ef4444','#06b6d4'];
     let h = 0; for (const c of (name || '')) h = (h * 31 + c.charCodeAt(0)) & 0xffffffff;
     return colors[Math.abs(h) % colors.length];
+}
+
+// =============================================
+// ===== TEAMS =====
+// =============================================
+let _activeTeamId = null;
+
+registerPage('teams', async () => {
+    const body = document.getElementById('page-body');
+    const hdr  = document.getElementById('page-header-actions');
+
+    hdr.innerHTML = canWrite() ? `
+        <button class="btn btn-primary btn-sm" onclick="openCreateTeamModal()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Create Team
+        </button>` : '';
+
+    body.innerHTML = '<div style="text-align:center;padding:3rem;"><span class="spinner"></span></div>';
+    await loadTeamsPage(body);
+});
+
+async function loadTeamsPage(body) {
+    body = body || document.getElementById('page-body');
+    try {
+        const teams = await api('/teams');
+        if (!teams || teams.length === 0) {
+            body.innerHTML = `
+                <div class="teams-empty">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="56" height="56" style="color:var(--text-muted);margin-bottom:1rem;"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                    <h3>No teams yet</h3>
+                    <p>Create a team to share documents with your colleagues.</p>
+                    ${canWrite() ? `<button class="btn btn-primary" onclick="openCreateTeamModal()" style="margin-top:1rem;">Create Your First Team</button>` : ''}
+                </div>`;
+            return;
+        }
+
+        body.innerHTML = `<div class="teams-grid" id="teams-grid">${teams.map(renderTeamCard).join('')}</div>`;
+    } catch (err) {
+        body.innerHTML = `<div class="alert alert-error" style="display:block">${esc(err.message)}</div>`;
+    }
+}
+
+function renderTeamCard(team) {
+    const isOwner = team.your_role === 'owner';
+    const memberWord = team.member_count === 1 ? 'member' : 'members';
+    const avatarColor1 = avatarColor(team.name);
+    return `
+        <div class="team-card" id="team-card-${team.id}">
+            <div class="team-card-header">
+                <div class="team-avatar" style="background:${avatarColor1};">${initials(team.name)}</div>
+                <div class="team-card-info">
+                    <div class="team-name">${esc(team.name)}</div>
+                    <div class="team-meta">${team.member_count} ${memberWord} &middot; ${isOwner ? '<span class="team-role-owner">Owner</span>' : '<span class="team-role-member">Member</span>'}</div>
+                </div>
+            </div>
+            ${team.description ? `<p class="team-desc">${esc(team.description)}</p>` : ''}
+            <div class="team-card-actions">
+                <button class="btn btn-outline btn-sm" onclick="openTeamDetail(${team.id})">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                    Manage Members
+                </button>
+                ${isOwner ? `
+                    <button class="btn btn-outline btn-sm" onclick="openEditTeamModal(${team.id},'${esc(team.name)}','${esc(team.description||'')}')">Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteTeam(${team.id},'${esc(team.name)}')">Delete</button>
+                ` : `
+                    <button class="btn btn-outline btn-sm" onclick="leaveTeam(${team.id},'${esc(team.name)}')">Leave</button>
+                `}
+            </div>
+        </div>`;
+}
+
+// ── Team Detail Modal ─────────────────────────────────────────────────────────
+async function openTeamDetail(teamId) {
+    _activeTeamId = teamId;
+    showModal('team-detail-modal', `
+        <div class="modal-header">
+            <h3>Team Members</h3>
+            <button class="modal-close" onclick="closeModal('team-detail-modal')">&times;</button>
+        </div>
+        <div class="modal-body" id="team-detail-body">
+            <div style="text-align:center;padding:2rem;"><span class="spinner"></span></div>
+        </div>`);
+    await loadTeamDetail(teamId);
+}
+
+async function loadTeamDetail(teamId) {
+    const body = document.getElementById('team-detail-body');
+    if (!body) return;
+    try {
+        const team = await api(`/teams/${teamId}`);
+        const isOwner = team.your_role === 'owner';
+        body.innerHTML = `
+            <div style="margin-bottom:1rem;">
+                <div style="font-size:1rem;font-weight:700;">${esc(team.name)}</div>
+                ${team.description ? `<div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.25rem;">${esc(team.description)}</div>` : ''}
+            </div>
+            ${isOwner ? `
+                <div class="team-add-member-row">
+                    <input type="email" id="add-member-email" placeholder="Email address to invite..." class="form-control" style="flex:1;">
+                    <button class="btn btn-primary btn-sm" onclick="addTeamMember(${teamId})">Add Member</button>
+                </div>` : ''}
+            <div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:0.5rem;">
+                ${team.member_count} Member${team.member_count !== 1 ? 's' : ''}
+            </div>
+            <div class="team-members-list">
+                ${team.members.map(m => renderMemberRow(m, isOwner, team.members)).join('')}
+            </div>`;
+    } catch (err) {
+        body.innerHTML = `<div class="alert alert-error" style="display:block">${esc(err.message)}</div>`;
+    }
+}
+
+function renderMemberRow(m, isOwner, allMembers) {
+    const currentUser = Auth.getUser();
+    const isMe = currentUser && m.user_id === currentUser.id;
+    const canRemove = isOwner && !isMe && m.role !== 'owner';
+    return `
+        <div class="team-member-row">
+            <div class="team-member-avatar" style="background:${avatarColor(m.full_name)};">${initials(m.full_name)}</div>
+            <div class="team-member-info">
+                <div class="team-member-name">${esc(m.full_name)} ${isMe ? '<span class="file-owner-you">You</span>' : ''}</div>
+                <div class="team-member-email">${esc(m.email)}</div>
+            </div>
+            <span class="team-member-role ${m.role === 'owner' ? 'role-owner' : 'role-member'}">${m.role}</span>
+            ${canRemove ? `<button class="btn btn-danger btn-sm" onclick="removeTeamMember(${_activeTeamId},${m.user_id},'${esc(m.full_name)}')">Remove</button>` : ''}
+        </div>`;
+}
+
+async function addTeamMember(teamId) {
+    const input = document.getElementById('add-member-email');
+    const email = (input?.value || '').trim();
+    if (!email) { toast('Enter an email address', 'error'); return; }
+    try {
+        await api(`/teams/${teamId}/members`, {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+        });
+        toast(`Member added!`, 'success');
+        if (input) input.value = '';
+        await loadTeamDetail(teamId);
+        await refreshTeamCard(teamId);
+    } catch (e) { toast(e.message, 'error'); }
+}
+
+async function removeTeamMember(teamId, userId, name) {
+    showConfirmModal({
+        title: 'Remove Member',
+        icon: '👤',
+        message: `Remove <strong>${esc(name)}</strong> from this team?`,
+        confirmText: 'Remove',
+        confirmClass: 'btn-danger',
+        onConfirm: async () => {
+            try {
+                await api(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' });
+                toast(`${name} removed from team`, 'success');
+                await loadTeamDetail(teamId);
+                await refreshTeamCard(teamId);
+            } catch (e) { toast(e.message, 'error'); }
+        },
+    });
+}
+
+// ── Create Team Modal ──────────────────────────────────────────────────────────
+function openCreateTeamModal() {
+    showModal('create-team-modal', `
+        <div class="modal-header">
+            <h3>Create New Team</h3>
+            <button class="modal-close" onclick="closeModal('create-team-modal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Team Name <span style="color:var(--danger)">*</span></label>
+                <input type="text" id="new-team-name" class="form-control" placeholder="e.g. Analytics Team" maxlength="100">
+            </div>
+            <div class="form-group">
+                <label>Description <span style="font-size:0.75rem;color:var(--text-muted);">(optional)</span></label>
+                <input type="text" id="new-team-desc" class="form-control" placeholder="What does this team work on?">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal('create-team-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="submitCreateTeam()">Create Team</button>
+        </div>`);
+    requestAnimationFrame(() => document.getElementById('new-team-name')?.focus());
+}
+
+async function submitCreateTeam() {
+    const name = (document.getElementById('new-team-name')?.value || '').trim();
+    const desc = (document.getElementById('new-team-desc')?.value || '').trim();
+    if (!name) { toast('Team name is required', 'error'); return; }
+    try {
+        await api('/teams', {
+            method: 'POST',
+            body: JSON.stringify({ name, description: desc || null }),
+        });
+        closeModal('create-team-modal');
+        toast(`Team "${name}" created!`, 'success');
+        await loadTeamsPage();
+    } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Edit Team Modal ────────────────────────────────────────────────────────────
+function openEditTeamModal(teamId, currentName, currentDesc) {
+    showModal('edit-team-modal', `
+        <div class="modal-header">
+            <h3>Edit Team</h3>
+            <button class="modal-close" onclick="closeModal('edit-team-modal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Team Name</label>
+                <input type="text" id="edit-team-name" class="form-control" value="${esc(currentName)}" maxlength="100">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <input type="text" id="edit-team-desc" class="form-control" value="${esc(currentDesc)}">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal('edit-team-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="submitEditTeam(${teamId})">Save Changes</button>
+        </div>`);
+}
+
+async function submitEditTeam(teamId) {
+    const name = (document.getElementById('edit-team-name')?.value || '').trim();
+    const desc = (document.getElementById('edit-team-desc')?.value || '').trim();
+    if (!name) { toast('Team name cannot be empty', 'error'); return; }
+    try {
+        await api(`/teams/${teamId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ name, description: desc || null }),
+        });
+        closeModal('edit-team-modal');
+        toast('Team updated!', 'success');
+        await loadTeamsPage();
+    } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Delete / Leave ─────────────────────────────────────────────────────────────
+async function deleteTeam(teamId, name) {
+    showConfirmModal({
+        title: 'Delete Team',
+        icon: '⚠️',
+        message: `Delete team <strong>${esc(name)}</strong>? All members will lose access. This cannot be undone.`,
+        confirmText: 'Delete Team',
+        confirmClass: 'btn-danger',
+        onConfirm: async () => {
+            try {
+                await api(`/teams/${teamId}`, { method: 'DELETE' });
+                toast(`Team "${name}" deleted`, 'success');
+                await loadTeamsPage();
+            } catch (e) { toast(e.message, 'error'); }
+        },
+    });
+}
+
+async function leaveTeam(teamId, name) {
+    showConfirmModal({
+        title: 'Leave Team',
+        icon: '🚪',
+        message: `Leave team <strong>${esc(name)}</strong>? You will no longer see their documents.`,
+        confirmText: 'Leave Team',
+        confirmClass: 'btn-warning',
+        onConfirm: async () => {
+            try {
+                await api(`/teams/${teamId}/leave`, { method: 'POST' });
+                toast(`Left team "${name}"`, 'success');
+                await loadTeamsPage();
+            } catch (e) { toast(e.message, 'error'); }
+        },
+    });
+}
+
+async function refreshTeamCard(teamId) {
+    try {
+        const teams = await api('/teams');
+        const team = teams.find(t => t.id === teamId);
+        const card = document.getElementById(`team-card-${teamId}`);
+        if (team && card) card.outerHTML = renderTeamCard(team);
+    } catch {}
 }
 
 // ===== Login Page Init =====
