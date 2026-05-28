@@ -7,7 +7,9 @@ python-multipart==0.0.20
 
 # Database
 sqlalchemy[asyncio]==2.0.36
-aiosqlite==0.20.0
+aiosqlite==0.20.0          # SQLite (local dev)
+asyncpg==0.30.0            # PostgreSQL async driver (production)
+psycopg2-binary==2.9.10    # PostgreSQL sync driver (Alembic migrations)
 alembic==1.14.1
 
 # Auth

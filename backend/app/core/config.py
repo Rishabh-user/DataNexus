@@ -26,9 +26,9 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     api_v1_prefix: str = "/api/v1"
 
-    # Database
+    # Database — always PostgreSQL (set via DATABASE_URL in .env)
     database_url: str = "postgresql+asyncpg://datanexus:datanexus@localhost:5432/datanexus"
-    database_url_sync: str = "postgresql://datanexus:datanexus@localhost:5432/datanexus"
+    database_url_sync: str = "postgresql+psycopg2://datanexus:datanexus@localhost:5432/datanexus"
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"

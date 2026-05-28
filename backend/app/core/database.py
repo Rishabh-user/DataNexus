@@ -16,19 +16,15 @@ convention = {
 
 metadata = MetaData(naming_convention=convention)
 
-_is_sqlite = settings.database_url.startswith("sqlite")
-
-_engine_kwargs = {
-    "echo": settings.debug,
-}
-if not _is_sqlite:
-    _engine_kwargs.update({
-        "pool_size": 20,
-        "max_overflow": 10,
-        "pool_pre_ping": True,
-    })
-
-engine = create_async_engine(settings.database_url, **_engine_kwargs)
+# Always PostgreSQL — connection pool settings for production
+engine = create_async_engine(
+    settings.database_url,
+    echo=settings.debug,
+    pool_size=20,
+    max_overflow=10,
+    pool_pre_ping=True,       # drop stale connections automatically
+    pool_recycle=300,         # recycle connections every 5 min (Render idle timeout)
+)
 
 async_session_factory = async_sessionmaker(
     engine,
